@@ -6,7 +6,6 @@ package xorm
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -148,8 +147,22 @@ func (statement *Statement) Where(query interface{}, args ...interface{}) *State
 func (statement *Statement) And(query interface{}, args ...interface{}) *Statement {
 	switch query.(type) {
 	case string:
-		cond := builder.Expr(query.(string), args...)
-		statement.cond = statement.cond.And(cond)
+		isExpr := false
+		var cargs []interface{}
+		for i, _ := range args {
+			if _, ok := args[i].(sqlExpr); ok {
+				isExpr = true
+			}
+			cargs = append(cargs, args[i])
+		}
+		if isExpr {
+			sqlStr, _ := ConvertToBoundSQL(query.(string), cargs)
+			cond := builder.Expr(sqlStr)
+			statement.cond = statement.cond.And(cond)
+		} else {
+			cond := builder.Expr(query.(string), args...)
+			statement.cond = statement.cond.And(cond)
+		}
 	case map[string]interface{}:
 		cond := builder.Eq(query.(map[string]interface{}))
 		statement.cond = statement.cond.And(cond)
@@ -172,8 +185,22 @@ func (statement *Statement) And(query interface{}, args ...interface{}) *Stateme
 func (statement *Statement) Or(query interface{}, args ...interface{}) *Statement {
 	switch query.(type) {
 	case string:
-		cond := builder.Expr(query.(string), args...)
-		statement.cond = statement.cond.Or(cond)
+		isExpr := false
+		var cargs []interface{}
+		for i, _ := range args {
+			if _, ok := args[i].(sqlExpr); ok {
+				isExpr = true
+			}
+			cargs = append(cargs, args[i])
+		}
+		if isExpr {
+			sqlStr, _ := ConvertToBoundSQL(query.(string), cargs)
+			cond := builder.Expr(sqlStr)
+			statement.cond = statement.cond.Or(cond)
+		} else {
+			cond := builder.Expr(query.(string), args...)
+			statement.cond = statement.cond.Or(cond)
+		}
 	case map[string]interface{}:
 		cond := builder.Eq(query.(map[string]interface{}))
 		statement.cond = statement.cond.Or(cond)
@@ -408,7 +435,7 @@ func (statement *Statement) buildUpdates(bean interface{},
 				} else {
 					// Blank struct could not be as update data
 					if requiredField || !isStructZero(fieldValue) {
-						bytes, err := json.Marshal(fieldValue.Interface())
+						bytes, err := DefaultJSONHandler.Marshal(fieldValue.Interface())
 						if err != nil {
 							panic(fmt.Sprintf("mashal %v failed", fieldValue.Interface()))
 						}
@@ -437,7 +464,7 @@ func (statement *Statement) buildUpdates(bean interface{},
 			}
 
 			if col.SQLType.IsText() {
-				bytes, err := json.Marshal(fieldValue.Interface())
+				bytes, err := DefaultJSONHandler.Marshal(fieldValue.Interface())
 				if err != nil {
 					engine.logger.Error(err)
 					continue
@@ -457,7 +484,7 @@ func (statement *Statement) buildUpdates(bean interface{},
 					fieldType.Elem().Kind() == reflect.Uint8 {
 					val = fieldValue.Slice(0, 0).Interface()
 				} else {
-					bytes, err = json.Marshal(fieldValue.Interface())
+					bytes, err = DefaultJSONHandler.Marshal(fieldValue.Interface())
 					if err != nil {
 						engine.logger.Error(err)
 						continue
